@@ -20,12 +20,14 @@ void IndexServer::go() {
 
 		//check if new connection
 		if (waiter.isReady(listener)) {
-			Connection *newPeer = new Connection();
-			listener.accept(newPeer->socket);
-			newPeer->ip = newPeer->socket.getRemoteAddress();
-			newPeer->port = newPeer->socket.getRemotePort();
-			clients.push_back(newPeer);
-			waiter.add(newPeer->socket);
+			Connection *newClient = new Connection();
+			listener.accept(newClient->socket);
+
+			newClient->ip = newClient->socket.getRemoteAddress();
+			newClient->port = newClient->socket.getRemotePort();
+
+			clients.push_back(newClient);
+			waiter.add(newClient->socket);
 		}
 
 		//check if something from existing connection
@@ -72,6 +74,7 @@ void IndexServer::handleMessage(Connection *source) {
 
 		removeFile(filename, source);
 	}
+	//TODO: handle all types of messages
 }
 
 //returns the Connection that owns the requested file
