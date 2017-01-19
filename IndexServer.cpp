@@ -1,22 +1,22 @@
-//
-// Created by Asda Tapel on 1/17/17.
-//
-
 #include "IndexServer.h"
 
-IndexServer::~IndexServer(){
-	for (int i = 0; i < clients.size(); ++i){
+//just need to clean out the sockets
+IndexServer::~IndexServer() {
+	for (int i = 0; i < clients.size(); ++i) {
+		clients[i]->socket.disconnect();
 		delete clients[i];
 	}
 }
 
 void IndexServer::init() {
-	listener.listen(serverPort); //random port number
+	listener.listen(serverPort); //start the listener
 	waiter.add(listener);
 }
 
+//this is the main loop that waits for messages and handles them
+//right now its an infinite loop, need to add termination
 void IndexServer::go() {
-	while (waiter.wait()) {
+	while (waiter.wait()) {    //wait for message to come in or new connection
 
 		//check if new connection
 		if (waiter.isReady(listener)) {
@@ -37,9 +37,14 @@ void IndexServer::go() {
 	}
 }
 
+//handle all requests from a client
 void IndexServer::handleMessage(Connection *source) {
 	sf::Packet packet;
-	source->socket.receive(packet);
+	sf::Socket::Status status = source->socket.receive(packet);
+	if (status != sf::Socket::Done) {
+		//TODO: do some error stuff
+		return;
+	}
 
 	sf::Int32 message_type;
 	packet >> message_type;
@@ -69,18 +74,20 @@ void IndexServer::handleMessage(Connection *source) {
 	}
 }
 
-Connection* IndexServer::getFileLocation(std::string filename) {
-	for (int i = 0; i < files.size(); ++i){
-		if (filename == files[i].filename){
+//returns the Connection that owns the requested file
+//if not found, returns nullptr
+Connection *IndexServer::getFileLocation(std::string filename) {
+	for (int i = 0; i < files.size(); ++i) {
+		if (filename == files[i].filename) {
 			return files[i].connection;
 		}
 	}
 	return nullptr;
 }
 
-void IndexServer::removeFile(std::string filename, Connection* client) {
-	for (int i = 0; i < files.size(); ++i){
-		if (filename == files[i].filename && client == files[i].connection){
+void IndexServer::removeFile(std::string filename, Connection *client) {
+	for (int i = 0; i < files.size(); ++i) {
+		if (filename == files[i].filename && client == files[i].connection) {
 			files.erase(files.begin() + i);
 			return;
 		}

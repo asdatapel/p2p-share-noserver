@@ -1,7 +1,3 @@
-//
-// Created by Asda Tapel on 1/17/17.
-//
-
 #ifndef P2P_SHARE_CLIENT_H
 #define P2P_SHARE_CLIENT_H
 

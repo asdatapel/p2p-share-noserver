@@ -1,7 +1,3 @@
-//
-// Created by Asda Tapel on 1/17/17.
-//
-
 #ifndef P2P_SHARE_PEER_H
 #define P2P_SHARE_PEER_H
 
@@ -9,6 +5,11 @@
 #include <string>
 
 #include <SFML/Network.hpp>
+
+/* This class is redundant right now,
+ * since sf::TcpSocket contains the
+ * ip and port but it might be
+ * useful later to include things like bandwidth, ping, etc.*/
 
 class Connection {
 public:

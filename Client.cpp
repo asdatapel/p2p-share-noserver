@@ -1,11 +1,9 @@
-//
-// Created by Asda Tapel on 1/17/17.
-//
-
 #include "Client.h"
 
+//just need to clean out the sockets
 Client::~Client(){
 	for (int i = 0; i < peers.size(); ++i){
+		peers[i]->socket.disconnect();
 		delete peers[i];
 	}
 }

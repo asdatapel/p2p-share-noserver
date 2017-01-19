@@ -1,7 +1,3 @@
-//
-// Created by Asda Tapel on 1/17/17.
-//
-
 #ifndef P2P_SHARE_SERVER_H
 #define P2P_SHARE_SERVER_H
 
@@ -15,7 +11,11 @@
 struct IndexFile{
 	std::string filename;
 	Connection* connection;
-	//int size; not necessary
+
+	/*this stuff not necessary*/
+	//int size;
+	//std::string filetype;
+
 };
 
 class IndexServer {
@@ -38,6 +38,5 @@ private:
 
 	std::vector<IndexFile> files;
 };
-
 
 #endif //P2P_SHARE_SERVER_H
