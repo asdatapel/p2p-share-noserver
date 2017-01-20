@@ -1,9 +1,13 @@
 #ifndef P2P_SHARE_CLIENT_H
 #define P2P_SHARE_CLIENT_H
 
+#include <iostream>
 #include <vector>
 #include <thread>
 #include <mutex>
+#include <string>
+#include <sstream>
+#include <algorithm>
 
 #include <SFML/Network.hpp>
 
@@ -25,9 +29,13 @@ private:
 
 	std::mutex lock;
 
+	bool timeToExit;
+
 	void incomingLoop();
+	void inputLoop();
 
 	void handleMessage(Connection* peer);
+	void handleInput(std::string input);
 
 };
 

@@ -1,6 +1,7 @@
 #ifndef P2P_SHARE_SERVER_H
 #define P2P_SHARE_SERVER_H
 
+#include <iostream>
 #include <vector>
 
 #include <SFML/Network.hpp>
@@ -12,7 +13,7 @@ struct IndexFile{
 	std::string filename;
 	Connection* connection;
 
-	/*this stuff not necessary*/
+	/*this stuff maybe not necessary*/
 	//int size;
 	//std::string filetype;
 

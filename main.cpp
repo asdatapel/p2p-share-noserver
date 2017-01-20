@@ -5,21 +5,22 @@
 #include <SFML/Network.hpp>
 
 #include "Const.h"
+
 #include "IndexServer.h"
-
-void do_server();
-
-#define SERVER //flag for whether we are building client or server
+#include "Client.h"
 
 int main() {
 
-#ifdef SERVER
+#if SERVER == 1
 	IndexServer server;
 	server.init();
 
 	server.go();
 #else
-	//client stuff here
+	Client client;
+	client.init();
+
+	client.go();
 #endif
 
 }

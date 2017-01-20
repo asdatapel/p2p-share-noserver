@@ -9,8 +9,11 @@ IndexServer::~IndexServer() {
 }
 
 void IndexServer::init() {
+	std::cout << "Starting Server" << "\n";
 	listener.listen(serverPort); //start the listener
 	waiter.add(listener);
+
+	std::cout << "Server ready\n";
 }
 
 //this is the main loop that waits for messages and handles them
@@ -25,6 +28,8 @@ void IndexServer::go() {
 
 			newClient->ip = newClient->socket.getRemoteAddress();
 			newClient->port = newClient->socket.getRemotePort();
+
+			std::cout << "New connection: IP " << newClient->ip << ", Port " << newClient->port << "\n";
 
 			clients.push_back(newClient);
 			waiter.add(newClient->socket);
@@ -55,6 +60,8 @@ void IndexServer::handleMessage(Connection *source) {
 		std::string filename;
 		packet >> filename;
 
+		std::cout << "Request for file \"" << filename << "\"\n";
+
 		Connection *location = getFileLocation(filename);
 		if (location) {
 			sf::Packet response;
@@ -66,6 +73,8 @@ void IndexServer::handleMessage(Connection *source) {
 	} else if (message_type == SERVER_REGISTER_FILE) {
 		std::string filename;
 		packet >> filename;
+
+		std::cout << "New file \"" << filename << "\"\n";
 
 		files.push_back({filename, source});
 	} else if (message_type == SERVER_UNREGISTER_FILE) {
