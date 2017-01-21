@@ -1,5 +1,9 @@
 #include "IndexServer.h"
 
+IndexServer::IndexServer() {
+	timeToExit = false;
+}
+
 //just need to clean out the sockets
 IndexServer::~IndexServer() {
 	for (int i = 0; i < clients.size(); ++i) {
@@ -12,37 +16,29 @@ void IndexServer::init() {
 	std::cout << "Starting Server" << "\n";
 	listener.listen(serverPort); //start the listener
 	waiter.add(listener);
-
-	std::cout << "Server ready\n";
 }
 
 //this is the main loop that waits for messages and handles them
-//right now its an infinite loop, need to add termination
 void IndexServer::go() {
-	while (waiter.wait()) {    //wait for message to come in or new connection
+	std::thread loopThread(&IndexServer::incomingLoop, this);
 
-		//check if new connection
-		if (waiter.isReady(listener)) {
-			Connection *newClient = new Connection();
-			listener.accept(newClient->socket);
+	inputLoop();
 
-			newClient->ip = newClient->socket.getRemoteAddress();
-			newClient->port = newClient->socket.getRemotePort();
+	loopThread.join();
+}
 
-			std::cout << "New connection: IP " << newClient->ip << ", Port " << newClient->port << "\n";
 
-			clients.push_back(newClient);
-			waiter.add(newClient->socket);
-		}
+//this is the loop that takes in user commands
+void IndexServer::inputLoop() {
+	std::cout << "Server Ready\n";
+	while (!timeToExit) {
+		std::string input;
+		std::getline(std::cin, input);
 
-		//check if something from existing connection
-		for (int i = 0; i < clients.size(); ++i) {
-			if (waiter.isReady(clients[i]->socket)) {
-				handleMessage(clients[i]);
-			}
-		}
+		handleInput(input);
 	}
 }
+
 
 //handle all requests from a client
 void IndexServer::handleMessage(Connection *source) {
@@ -86,6 +82,28 @@ void IndexServer::handleMessage(Connection *source) {
 	//TODO: handle all types of messages
 }
 
+void IndexServer::handleInput(std::string input) {
+	std::vector<std::string> commandParts;
+
+	//parse the input, should probably be in own function
+	std::replace(input.begin(), input.end(), '\n', ' ');
+	std::stringstream stream(input);
+	std::string part;
+	int i = 0;
+	while (std::getline(stream, part, ' ')) {
+		commandParts.push_back(part);
+		++i;
+	}
+
+	lock.lock();
+
+	if (commandParts[0] == "exit") {
+		timeToExit = true;
+	}
+
+	lock.unlock();
+}
+
 //returns the Connection that owns the requested file
 //if not found, returns nullptr
 Connection *IndexServer::getFileLocation(std::string filename) {
@@ -103,5 +121,42 @@ void IndexServer::removeFile(std::string filename, Connection *client) {
 			files.erase(files.begin() + i);
 			return;
 		}
+	}
+}
+
+
+void IndexServer::incomingLoop() {
+	while (true) {
+		bool anythingReady = waiter.wait(sf::seconds(2)); //wait for message to come in or new connection
+
+		lock.lock();
+		if (!anythingReady) { // check if something actually came in
+			if (timeToExit) {
+				lock.unlock();
+				return;
+			}
+		} else {
+			//check if new connection
+			if (waiter.isReady(listener)) {
+				Connection *newClient = new Connection();
+				listener.accept(newClient->socket);
+
+				newClient->ip = newClient->socket.getRemoteAddress();
+				newClient->port = newClient->socket.getRemotePort();
+
+				std::cout << "New connection: IP " << newClient->ip << ", Port " << newClient->port << "\n";
+
+				clients.push_back(newClient);
+				waiter.add(newClient->socket);
+			}
+
+			//check if something from existing connection
+			for (int i = 0; i < clients.size(); ++i) {
+				if (waiter.isReady(clients[i]->socket)) {
+					handleMessage(clients[i]);
+				}
+			}
+		}
+		lock.unlock();
 	}
 }

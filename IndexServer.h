@@ -3,6 +3,10 @@
 
 #include <iostream>
 #include <vector>
+#include <thread>
+#include <mutex>
+#include <string>
+#include <sstream>
 
 #include <SFML/Network.hpp>
 
@@ -21,6 +25,7 @@ struct IndexFile{
 
 class IndexServer {
 public:
+	IndexServer();
 	~IndexServer();
 
 	void init();
@@ -31,11 +36,19 @@ private:
 	sf::TcpListener listener;
 	sf::SocketSelector waiter;
 
+	bool timeToExit;
+
+	std::mutex lock;
+
 	Connection* getFileLocation(std::string filename);
 
 	void removeFile(std::string filename, Connection* peer);
 
+	void incomingLoop();
+	void inputLoop();
+
 	void handleMessage(Connection* source);
+	void handleInput(std::string input);
 
 	std::vector<IndexFile> files;
 };

@@ -1,5 +1,9 @@
 #include "Client.h"
 
+Client::Client() {
+	timeToExit = false;
+}
+
 //just need to clean out the sockets
 Client::~Client() {
 	for (int i = 0; i < peers.size(); ++i) {
@@ -9,8 +13,6 @@ Client::~Client() {
 }
 
 void Client::init() {
-	timeToExit = false;
-
 	std::cout << "Starting Client" << "\n";
 	indexServer.socket.connect(sf::IpAddress::LocalHost, serverPort); //need error check
 
@@ -41,6 +43,29 @@ void Client::inputLoop() {
 	}
 }
 
+
+void Client::handleMessage(Connection *source) {
+	//TODO: handle incoming message, similar to IndexServer::handleMessage
+
+	sf::Packet packet;
+	sf::Socket::Status status = source->socket.receive(packet);
+	if (status != sf::Socket::Done) {
+		//TODO: do some error stuff
+		return;
+	}
+
+	sf::Int32 message_type;
+	packet >> message_type;
+
+	if (message_type == CLIENT_GIVE_FILE_LOCATION) {
+		std::string ip;
+		int port;
+		packet >> ip >> port;
+
+		std::cout << "File location: " << ip << ", " << port << "\n";
+	}
+}
+
 void Client::handleInput(std::string input) {
 	std::vector<std::string> commandParts;
 
@@ -63,7 +88,7 @@ void Client::handleInput(std::string input) {
 		message << SERVER_REQUEST_FILE_LOCATION;
 		message << commandParts[1];
 
-		std::cout << "Requesting file \"" << commandParts[1] << "\"\n";
+		std::cout << "Requesting file location for\"" << commandParts[1] << "\"\n";
 
 		indexServer.socket.send(message);
 	} else if (commandParts[0] == "addfile") {
@@ -79,13 +104,14 @@ void Client::handleInput(std::string input) {
 	lock.unlock();
 }
 
+
 //this is the loop that waits for messages and handles them
 void Client::incomingLoop() {
-	while (true) {    //wait for message to come in or new connection
-		bool anythingReady = waiter.wait(sf::seconds(2));
+	while (true) {
+		bool anythingReady = waiter.wait(sf::seconds(2)); //wait for message to come in or new connection
 
 		lock.lock();
-		if (!anythingReady) {
+		if (!anythingReady) { // check if something actually came in
 			if (timeToExit) {
 				lock.unlock();
 				return;
@@ -118,27 +144,5 @@ void Client::incomingLoop() {
 
 		}
 		lock.unlock();
-	}
-}
-
-void Client::handleMessage(Connection *source) {
-	//TODO: handle incoming message, similar to IndexServer::handleMessage
-
-	sf::Packet packet;
-	sf::Socket::Status status = source->socket.receive(packet);
-	if (status != sf::Socket::Done) {
-		//TODO: do some error stuff
-		return;
-	}
-
-	sf::Int32 message_type;
-	packet >> message_type;
-
-	if (message_type == CLIENT_GIVE_FILE_LOCATION) {
-		std::string ip;
-		int port;
-		packet >> ip >> port;
-
-		std::cout << "File location: " << ip << ", " << port << "\n";
 	}
 }
