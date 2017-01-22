@@ -69,9 +69,11 @@ bool File::isComplete() {
 
 void File::writeToDisk() {
 	std::ofstream stream;
-	stream.open(filename, std::ios::binary | std::ios::trunc);
+	stream.open(filename, std::ios::out | std::ios::binary | std::ios::trunc);
 
-
+	for (int i = 0; i < pieces.size(); ++i){
+		stream.write(pieces[i].data, pieces[i].actualSize);
+	}
 }
 
 

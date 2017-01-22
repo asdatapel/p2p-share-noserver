@@ -3,18 +3,21 @@
 Client::Client() {
 	timeToExit = false;
 	myIp = sf::IpAddress::LocalHost.toString();
-	listenerPort = 60000; //random port number
+	listenerPort = 0; //random port number
 }
 
 Client::~Client() {
 }
 
 void Client::init() {
-	std::cout << "Starting Client" << "\n";
+	std::cout << "Starting Client..." << "\n";
+
+	handleConnectServer("http://p2pshare.duckdns.org", serverPort);
 
 	//TODO: register all files with server
 
 	listener.listen(listenerPort);
+	listenerPort = listener.getLocalPort();
 	waiter.add(listener);
 	waiter.add(indexServer.socket);
 }
@@ -30,7 +33,7 @@ void Client::go() {
 
 //this is the loop that takes in user commands
 void Client::inputLoop() {
-	std::cout << "Ready\n";
+	std::cout << "Ready for input.\n";
 	while (!timeToExit) {
 		std::string input;
 		std::getline(std::cin, input);
@@ -62,7 +65,7 @@ void Client::handleMessage(Connection *peer) {
 		}
 
 		std::cout << "Peer disconnected\n";
-	} else if (message_type == PEER_REQUEST_FILE){
+	} else if (message_type == PEER_REQUEST_FILE) {
 		std::string filename;
 		packet >> filename;
 
@@ -71,11 +74,11 @@ void Client::handleMessage(Connection *peer) {
 
 		sf::Packet response;
 		response << PEER_NOTIFY_STARTING_TRANSFER;
-		response << filename << (sf::Uint32)file.size;
+		response << filename << (sf::Uint32) file.size;
 		peer->socket.send(response);
 
 		file.send(peer);
-	} else if (message_type == PEER_NOTIFY_STARTING_TRANSFER){
+	} else if (message_type == PEER_NOTIFY_STARTING_TRANSFER) {
 		std::string filename;
 		sf::Uint32 size;
 		packet >> filename >> size;
@@ -84,17 +87,20 @@ void Client::handleMessage(Connection *peer) {
 		file.init(filename, size);
 
 		incompleteFiles.push_back(file);
-	} else if (message_type == PEER_GIVE_FILE){
+	} else if (message_type == PEER_GIVE_FILE) {
 		std::string filename;
 		packet >> filename;
 
-		File* file = findIncompleteFile(filename);
+		File *file = findIncompleteFile(filename);
 
 		if (file) {
 			file->takeIncoming(packet);
+			if (file->isComplete()) {
+				file->writeToDisk();
+				removeIncompleteFile(filename);
+			}
 		}
-	}
-	else {
+	} else {
 		std::cout << "Received unknown message type from peer: " << message_type << "\n";
 	}
 }
@@ -136,9 +142,9 @@ void Client::handleServerMessage() {
 		std::cout << "Received file location: " << ip << ", " << port << "\n";
 
 
-		Connection* peerWithFile = findPeer(ip, port);
+		Connection *peerWithFile = findPeer(ip, port);
 
-		if (!peerWithFile){
+		if (!peerWithFile) {
 			peerWithFile = connectToPeer(ip, port);
 		}
 
@@ -172,10 +178,8 @@ void Client::handleInput(std::string input) {
 
 	if (commandParts[0] == "exit") {
 		handleQuit();
-	} else if (commandParts[0] == "connectserver") {
-		handleConnectServer(commandParts[1], atoi(commandParts[2].c_str()));
-
-		std::cout << "Connected to server: IP = " << commandParts[1] << " Port = " << commandParts[2] << "\n";
+	} else if (commandParts[0] == "connect") {
+		handleConnectServer("http://p2pshare.duckdns.org", serverPort);
 	} else if (commandParts[0] == "getfile") {
 		if (indexServer.isConnected) {
 			sf::Packet message;
@@ -273,6 +277,7 @@ void Client::handleQuit() {
 }
 
 void Client::handleConnectServer(std::string ip, sf::Uint32 port) {
+	std::cout << "Connecting to server...\n";
 	if (indexServer.isConnected) {
 		waiter.remove(indexServer.socket);
 		indexServer.socket.disconnect();
@@ -283,6 +288,8 @@ void Client::handleConnectServer(std::string ip, sf::Uint32 port) {
 	indexServer.socket.connect(sf::IpAddress(ip), port);
 	waiter.add(indexServer.socket);
 	indexServer.isConnected = true;
+
+	std::cout << "Connected to server.\n";
 }
 
 File *Client::findIncompleteFile(std::string filename) {
@@ -295,8 +302,16 @@ File *Client::findIncompleteFile(std::string filename) {
 	return nullptr;
 }
 
-Connection* Client::connectToPeer(std::string ip, sf::Uint32 port){
-	Connection* newPeer = new Connection();
+void Client::removeIncompleteFile(std::string filename) {
+	for (int i = 0; i < incompleteFiles.size(); ++i) {
+		if (incompleteFiles[i].filename == filename) {
+			incompleteFiles.erase(incompleteFiles.begin() + i);
+		}
+	}
+}
+
+Connection *Client::connectToPeer(std::string ip, sf::Uint32 port) {
+	Connection *newPeer = new Connection();
 	newPeer->socket.connect(ip, port);
 
 
@@ -306,7 +321,7 @@ Connection* Client::connectToPeer(std::string ip, sf::Uint32 port){
 	return newPeer;
 }
 
-Connection* Client::findPeer(std::string ip, sf::Uint32 port) {
+Connection *Client::findPeer(std::string ip, sf::Uint32 port) {
 	for (int i = 0; i < peers.size(); ++i) {
 		if (peers[i]->ip == ip && peers[i]->port == port) {
 			return peers[i];

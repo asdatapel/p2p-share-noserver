@@ -33,6 +33,7 @@ private:
 
 	std::vector<File> incompleteFiles;
 	File* findIncompleteFile(std::string filename);
+	void removeIncompleteFile(std::string filename);
 
 	std::string myIp;
 	sf::Uint32 listenerPort;
