@@ -13,9 +13,9 @@
 #include "Const.h"
 #include "Connection.h"
 
-struct IndexFile{
+struct IndexFile {
 	std::string filename;
-	Connection* connection;
+	Connection *connection;
 
 	/*this stuff maybe not necessary*/
 	//int size;
@@ -32,7 +32,7 @@ public:
 
 	void go();
 private:
-	std::vector<Connection*> clients;
+	std::vector<Connection *> clients;
 	sf::TcpListener listener;
 	sf::SocketSelector waiter;
 
@@ -40,17 +40,20 @@ private:
 
 	std::mutex lock;
 
-	Connection* getFileLocation(std::string filename);
+	Connection *getFileLocation(std::string filename);
 
-	void removeFile(std::string filename, Connection* peer);
+	void removeFile(std::string filename, Connection *peer);
 
 	void incomingLoop();
 	void inputLoop();
 
-	void handleMessage(Connection* source);
+	void handleMessage(Connection *source);
 	void handleInput(std::string input);
 
 	std::vector<IndexFile> files;
+
+	void handleQuit();
+
 };
 
 #endif //P2P_SHARE_SERVER_H

@@ -4,16 +4,12 @@ IndexServer::IndexServer() {
 	timeToExit = false;
 }
 
-//just need to clean out the sockets
 IndexServer::~IndexServer() {
-	for (int i = 0; i < clients.size(); ++i) {
-		clients[i]->socket.disconnect();
-		delete clients[i];
-	}
 }
 
 void IndexServer::init() {
 	std::cout << "Starting Server" << "\n";
+
 	listener.listen(serverPort); //start the listener
 	waiter.add(listener);
 }
@@ -46,26 +42,53 @@ void IndexServer::handleMessage(Connection *source) {
 	sf::Socket::Status status = source->socket.receive(packet);
 	if (status != sf::Socket::Done) {
 		//TODO: do some error stuff
+
 		return;
 	}
+
+	std::cout << "------------------\n";
+	std::cout << "Received message from client: IP = " << source->ip << " Port = " << source->port << "\n\n";
 
 	sf::Int32 message_type;
 	packet >> message_type;
 
-	if (message_type == SERVER_REQUEST_FILE_LOCATION) {
+	if (message_type == SERVER_GIVE_CONNECTION_INFO) {
+		std::string sourceIp;
+		sf::Uint32 sourcePort;
+		packet >> sourceIp >> sourcePort;
+
+		source->ip = sourceIp;
+		source->port = sourcePort;
+
+		std::cout << "New Client info received: IP = " << sourceIp << " Listener port = " << sourcePort << "\n";
+	} else if (message_type == SERVER_NOTIFY_CLIENT_DISCONNECT) {
+		waiter.remove(source->socket);
+		source->socket.disconnect();
+		std::cout << "Client disconnected\n";
+
+		for (int i = 0; i < clients.size(); ++i) {
+			if (clients[i] == source) {
+				clients.erase(clients.begin() + i);
+				--i;
+			}
+		}
+
+		delete source;
+	} else if (message_type == SERVER_REQUEST_FILE_LOCATION) {
 		std::string filename;
 		packet >> filename;
-
-		std::cout << "Request for file \"" << filename << "\"\n";
 
 		Connection *location = getFileLocation(filename);
 		if (location) {
 			sf::Packet response;
 			response << CLIENT_GIVE_FILE_LOCATION;
-			response << location->ip.toString() << location->port;
+			response << filename << location->ip.toString() << location->port;
 
 			source->socket.send(response);
 		}
+
+		std::cout << "Request for file \"" << filename << "\"\n";
+		std::cout << "Sent location \"" << filename << "\"\n";
 	} else if (message_type == SERVER_REGISTER_FILE) {
 		std::string filename;
 		packet >> filename;
@@ -78,8 +101,13 @@ void IndexServer::handleMessage(Connection *source) {
 		packet >> filename;
 
 		removeFile(filename, source);
+	} else {
+		std::cout << "Received unknown message type: " << message_type << "\n";
 	}
 	//TODO: handle all types of messages
+
+
+	std::cout << "------------------\n";
 }
 
 void IndexServer::handleInput(std::string input) {
@@ -98,7 +126,7 @@ void IndexServer::handleInput(std::string input) {
 	lock.lock();
 
 	if (commandParts[0] == "exit") {
-		timeToExit = true;
+		handleQuit();
 	}
 
 	lock.unlock();
@@ -141,10 +169,12 @@ void IndexServer::incomingLoop() {
 				Connection *newClient = new Connection();
 				listener.accept(newClient->socket);
 
-				newClient->ip = newClient->socket.getRemoteAddress();
-				newClient->port = newClient->socket.getRemotePort();
+				std::cout << "New connection: IP " << newClient->socket.getRemoteAddress() << ", Port "
+						  << newClient->socket.getRemotePort() << "\n";
 
-				std::cout << "New connection: IP " << newClient->ip << ", Port " << newClient->port << "\n";
+				sf::Packet response;
+				response << CLIENT_REQUEST_CONNECTION_INFO;
+				newClient->socket.send(response);
 
 				clients.push_back(newClient);
 				waiter.add(newClient->socket);
@@ -159,4 +189,19 @@ void IndexServer::incomingLoop() {
 		}
 		lock.unlock();
 	}
+}
+
+void IndexServer::handleQuit() {
+	waiter.remove(listener);
+	listener.close();
+
+	sf::Packet message;
+	message << CLIENT_NOTIFY_SERVER_SHUTDOWN;
+	for (int i = 0; i < clients.size(); ++i) {
+		clients[i]->socket.send(message);
+		clients[i]->socket.disconnect();
+		delete clients[i];
+	}
+
+	timeToExit = true;
 }

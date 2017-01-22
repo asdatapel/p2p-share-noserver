@@ -6,16 +6,18 @@
 
 #include <SFML/Network.hpp>
 
-/* This class is redundant right now,
- * since sf::TcpSocket contains the
- * ip and port but it might be
- * useful later to include things like bandwidth, ping, etc.*/
-
 class Connection {
 public:
+
+	Connection(){
+		isConnected = false;
+	}
+
 	sf::TcpSocket socket;
 	sf::IpAddress ip;
 	sf::Uint32 port;
+
+	bool isConnected;
 };
 
 

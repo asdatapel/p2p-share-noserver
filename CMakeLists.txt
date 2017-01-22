@@ -8,10 +8,7 @@ include_directories(ext/SFML/include)
 
 link_directories(ext/SFML/lib)
 
-set(SOURCE_FILES main.cpp IndexServer.cpp IndexServer.h Connection.cpp Connection.h Client.cpp Client.h)
-add_executable(p2p_share ${SOURCE_FILES})
-target_link_libraries(p2p_share sfml-system.a)
-target_link_libraries(p2p_share sfml-network.a)
+set(SOURCE_FILES main.cpp IndexServer.cpp Connection.cpp Client.cpp File.cpp)
 
 add_executable(p2p_Client ${SOURCE_FILES})
 target_link_libraries(p2p_Client sfml-system.a)
