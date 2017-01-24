@@ -2,8 +2,8 @@
 
 Client::Client() {
 	timeToExit = false;
-	myIp = sf::IpAddress::LocalHost.toString();
-	listenerPort = 0; //random port number
+	myIp = sf::IpAddress::getPublicAddress(sf::seconds(10)).toString();
+	listenerPort = 60000; //random port number
 }
 
 Client::~Client() {
