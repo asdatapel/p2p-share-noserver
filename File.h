@@ -20,7 +20,10 @@ struct FilePortion {
 
 class File {
 public:
-	File() {};
+	File() {
+		completePieces = 0;
+		totalPieces = 0;
+	};
 
 	std::string filename;
 	std::size_t size;
@@ -32,12 +35,16 @@ public:
 	void takeIncoming(sf::Packet &packet);
 
 	bool isComplete();
+	int getPieceCount();
+	int getCompletedPieceCount();
+	float getCompletionPercentage();
 
 	void writeToDisk();
 private:
 	std::vector<FilePortion> pieces;
 
-	int remainingPortions;
+	int completePieces;
+	int totalPieces;
 };
 
 #endif //P2P_SHARE_FILE_H

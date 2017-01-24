@@ -3,7 +3,7 @@
 Client::Client() {
 	timeToExit = false;
 	myIp = sf::IpAddress::getPublicAddress(sf::seconds(10)).toString();
-	listenerPort = 60000; //random port number
+	listenerPort = 0; //random port number
 }
 
 Client::~Client() {
@@ -53,6 +53,8 @@ void Client::handleMessage(Connection *peer) {
 	sf::Int32 message_type;
 	packet >> message_type;
 	if (message_type == PEER_NOTIFY_PEER_DISCONNECT) {
+		std::cout << "Peer: {" << peer->toString() << "} disconnected\n";
+
 		waiter.remove(peer->socket);
 		peer->socket.disconnect();
 
@@ -63,8 +65,6 @@ void Client::handleMessage(Connection *peer) {
 			}
 
 		}
-
-		std::cout << "Peer disconnected\n";
 	} else if (message_type == PEER_REQUEST_FILE) {
 		std::string filename;
 		packet >> filename;
@@ -78,6 +78,8 @@ void Client::handleMessage(Connection *peer) {
 		peer->socket.send(response);
 
 		file.send(peer);
+
+		std::cout << "Starting upload file: \"" << filename << "\" from {" << peer->toString() << "}\n";
 	} else if (message_type == PEER_NOTIFY_STARTING_TRANSFER) {
 		std::string filename;
 		sf::Uint32 size;
@@ -87,6 +89,8 @@ void Client::handleMessage(Connection *peer) {
 		file.init(filename, size);
 
 		incompleteFiles.push_back(file);
+
+		std::cout << "Beginning download of file: \"" << filename << "\" from {" << peer->toString() << "}\n";
 	} else if (message_type == PEER_GIVE_FILE) {
 		std::string filename;
 		packet >> filename;
@@ -94,14 +98,20 @@ void Client::handleMessage(Connection *peer) {
 		File *file = findIncompleteFile(filename);
 
 		if (file) {
+			std::cout << "Downloading file: \"" << filename << "\" Pieces Completed: " << file->getCompletedPieceCount()
+					  << " / " << file->getPieceCount() << "  " << file->getCompletionPercentage() * 100 << "%\n";
+
 			file->takeIncoming(packet);
 			if (file->isComplete()) {
+				std::cout << "File: \"" << filename << "\" download complete. Writing to disk...\n";
 				file->writeToDisk();
 				removeIncompleteFile(filename);
+				std::cout << "File: \"" << filename << "\" written to disk\n";
 			}
 		}
 	} else {
-		std::cout << "Received unknown message type from peer: " << message_type << "\n";
+		std::cout << "Received unknown message type from peer: {" << peer->toString() << "} header: " << message_type
+				  << "\n";
 	}
 }
 
@@ -139,25 +149,25 @@ void Client::handleServerMessage() {
 		int port;
 		packet >> filename >> ip >> port;
 
-		std::cout << "Received file location: " << ip << ", " << port << "\n";
-
-
 		Connection *peerWithFile = findPeer(ip, port);
 
 		if (!peerWithFile) {
 			peerWithFile = connectToPeer(ip, port);
 		}
 
-		sf::Packet message;
-		message << PEER_REQUEST_FILE;
-		message << filename;
+		if (peerWithFile) {
+			std::cout << "The file: \"" << filename << "\" is located at {" << peerWithFile->toString() << "}\n";
 
-		peerWithFile->socket.send(message);
+			sf::Packet message;
+			message << PEER_REQUEST_FILE;
+			message << filename;
 
-		std::cout << "Requested file from peer\n";
+			peerWithFile->socket.send(message);
 
+			std::cout << "Requested file: " << filename << " from {" << peerWithFile->toString() << "}\n";
+		}
 	} else {
-		std::cout << "Received unknown message type from server: " << message_type << "\n";
+		std::cout << "Received unknown message type from server. header: " << message_type << "\n";
 	}
 }
 
@@ -229,7 +239,7 @@ void Client::incomingLoop() {
 				Connection *newPeer = new Connection();
 				listener.accept(newPeer->socket);
 
-				newPeer->ip = newPeer->socket.getRemoteAddress();
+				newPeer->ip = newPeer->socket.getRemoteAddress().toString();
 				newPeer->port = newPeer->socket.getRemotePort();
 
 				peers.push_back(newPeer);
@@ -312,8 +322,15 @@ void Client::removeIncompleteFile(std::string filename) {
 
 Connection *Client::connectToPeer(std::string ip, sf::Uint32 port) {
 	Connection *newPeer = new Connection();
-	newPeer->socket.connect(ip, port);
+	newPeer->ip = ip;
+	newPeer->port = port;
 
+	std::cout << "Attempting to connect to peer {" << newPeer->toString() << "}...\n";
+
+	if (newPeer->socket.connect(ip, port) != sf::Socket::Done) {
+		std::cout << "Failed to connect to {" << newPeer->toString() << "}\n";
+		return nullptr;
+	}
 
 	peers.push_back(newPeer);
 	waiter.add(newPeer->socket);

@@ -82,7 +82,7 @@ void IndexServer::handleMessage(Connection *source) {
 		if (location) {
 			sf::Packet response;
 			response << CLIENT_GIVE_FILE_LOCATION;
-			response << filename << location->ip.toString() << location->port;
+			response << filename << location->ip << location->port;
 
 			source->socket.send(response);
 		}

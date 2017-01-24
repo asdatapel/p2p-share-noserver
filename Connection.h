@@ -14,10 +14,14 @@ public:
 	}
 
 	sf::TcpSocket socket;
-	sf::IpAddress ip;
+	std::string ip;
 	sf::Uint32 port;
 
 	bool isConnected;
+
+	std::string toString(){
+		return "IP: " + ip + ", Port: " + std::to_string(port);
+	}
 };
 
 

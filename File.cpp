@@ -7,9 +7,9 @@ void File::init(std::string filename, std::size_t size) {
 	this->filename = filename;
 	this->size = size;
 
-	remainingPortions = (int) (size / FILE_PORTION_SIZE) + 1;
+	totalPieces = (int) (size / FILE_PORTION_SIZE) + 1;
 
-	for (int i = 0; i < remainingPortions; ++i) {
+	for (int i = 0; i < totalPieces; ++i) {
 		pieces.push_back(FilePortion());
 	}
 }
@@ -27,9 +27,9 @@ void File::initFromDisk(std::string filename) {
 
 	size = stats.st_size;
 
-	remainingPortions = (int) (size / FILE_PORTION_SIZE) + 1;
+	totalPieces = (int) (size / FILE_PORTION_SIZE) + 1;
 
-	for (int i = 0; i < remainingPortions; ++i) {
+	for (int i = 0; i < totalPieces; ++i) {
 		pieces.push_back(FilePortion());
 		stream.read(pieces[i].data, FILE_PORTION_SIZE);
 		pieces[i].portionNumber = i;
@@ -60,11 +60,23 @@ void File::takeIncoming(sf::Packet &packet) {
 
 	packet >> pieces[portionNumber];
 
-	--remainingPortions;
+	++completePieces;
+}
+
+float File::getCompletionPercentage(){
+	return (float)completePieces / (float) totalPieces;
+}
+
+int File::getPieceCount(){
+	return totalPieces;
+}
+
+int File::getCompletedPieceCount(){
+	return completePieces;
 }
 
 bool File::isComplete() {
-	return (remainingPortions == 0);
+	return ((totalPieces - completePieces) == 0);
 }
 
 void File::writeToDisk() {
