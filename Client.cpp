@@ -327,6 +327,9 @@ Connection *Client::connectToPeer(std::string ip, sf::Uint32 port) {
 
 	std::cout << "Attempting to connect to peer {" << newPeer->toString() << "}...\n";
 
+	if(ip == myIp){
+		ip = sf::IpAddress::LocalHost.toString();
+	}
 	if (newPeer->socket.connect(ip, port) != sf::Socket::Done) {
 		std::cout << "Failed to connect to {" << newPeer->toString() << "}\n";
 		return nullptr;
