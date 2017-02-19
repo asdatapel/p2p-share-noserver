@@ -1,8 +1,10 @@
 #include "File.h"
 
+//operator overloads for a custom struct (declaration)
 sf::Packet &operator<<(sf::Packet &packet, const FilePortion &portion);
 sf::Packet &operator>>(sf::Packet &packet, FilePortion &portion);
 
+//setup file portion container
 void File::init(std::string filename, std::size_t size) {
 	this->filename = filename;
 	this->size = size;
@@ -14,6 +16,7 @@ void File::init(std::string filename, std::size_t size) {
 	}
 }
 
+//load the file from disk and split it into file portions
 void File::initFromDisk(std::string filename) {
 	this->filename = filename;
 
@@ -38,6 +41,7 @@ void File::initFromDisk(std::string filename) {
 
 }
 
+//send the file portions to a peer
 void File::send(Connection *peer) {
 	sf::Packet packet;
 	for (int i = 0; i < pieces.size(); ++i) {
@@ -50,6 +54,7 @@ void File::send(Connection *peer) {
 	}
 }
 
+//parse incoming portion and extract data
 void File::takeIncoming(sf::Packet &packet) {
 	sf::Int32 portionNumber;
 	packet >> portionNumber;
@@ -79,6 +84,7 @@ bool File::isComplete() {
 	return ((totalPieces - completePieces) == 0);
 }
 
+//write the complete file to disk, usually when done
 void File::writeToDisk() {
 	std::ofstream stream;
 	stream.open(filename, std::ios::out | std::ios::binary | std::ios::trunc);

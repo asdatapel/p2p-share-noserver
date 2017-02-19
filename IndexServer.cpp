@@ -5,8 +5,10 @@ IndexServer::IndexServer() {
 }
 
 IndexServer::~IndexServer() {
+	handleQuit();
 }
 
+//start listening for incoming connections
 void IndexServer::init() {
 	std::cout << "Starting Server" << "\n";
 
@@ -78,6 +80,7 @@ void IndexServer::handleMessage(Connection *source) {
 		std::string filename;
 		packet >> filename;
 
+		std::cout << "Request for file \"" << filename << "\"\n";
 		Connection *location = getFileLocation(filename);
 		if (location) {
 			sf::Packet response;
@@ -85,10 +88,15 @@ void IndexServer::handleMessage(Connection *source) {
 			response << filename << location->ip << location->port;
 
 			source->socket.send(response);
+			std::cout << "Sent location \"" << filename << "\"\n";
+		}else{
+			sf::Packet response;
+			response << CLIENT_GIVE_FILE_LOCATION;
+			response << filename << std::string("NULL") << sf::Int32(0);
+
+			source->socket.send(response);
 		}
 
-		std::cout << "Request for file \"" << filename << "\"\n";
-		std::cout << "Sent location \"" << filename << "\"\n";
 	} else if (message_type == SERVER_REGISTER_FILE) {
 		std::string filename;
 		packet >> filename;
@@ -110,6 +118,7 @@ void IndexServer::handleMessage(Connection *source) {
 	std::cout << "------------------\n";
 }
 
+//parses cmd input and handles it
 void IndexServer::handleInput(std::string input) {
 	std::vector<std::string> commandParts;
 
@@ -143,6 +152,7 @@ Connection *IndexServer::getFileLocation(std::string filename) {
 	return nullptr;
 }
 
+//remove a file from the index
 void IndexServer::removeFile(std::string filename, Connection *client) {
 	for (int i = 0; i < files.size(); ++i) {
 		if (filename == files[i].filename && client == files[i].connection) {
@@ -152,7 +162,8 @@ void IndexServer::removeFile(std::string filename, Connection *client) {
 	}
 }
 
-
+//this is the loop that waits for messages and passes them to handler functions
+//also takes care of new incoming connections
 void IndexServer::incomingLoop() {
 	while (true) {
 		bool anythingReady = waiter.wait(sf::seconds(2)); //wait for message to come in or new connection
@@ -191,6 +202,8 @@ void IndexServer::incomingLoop() {
 	}
 }
 
+
+//send disconnect messages to the server then exit
 void IndexServer::handleQuit() {
 	waiter.remove(listener);
 	listener.close();
@@ -202,6 +215,8 @@ void IndexServer::handleQuit() {
 		clients[i]->socket.disconnect();
 		delete clients[i];
 	}
+
+	clients.clear();
 
 	timeToExit = true;
 }

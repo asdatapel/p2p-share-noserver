@@ -4,17 +4,20 @@ Client::Client() {
 	timeToExit = false;
 	myIp = sf::IpAddress::getPublicAddress(sf::seconds(10)).toString();
 	listenerPort = 0; //random port number
+
+	currentlyTestingServer = false;
 }
 
 Client::~Client() {
+	handleQuit();
 }
 
+//start the listener and give it a port
+//try to connect to server
 void Client::init() {
 	std::cout << "Starting Client..." << "\n";
 
-	handleConnectServer("http://p2pshare.duckdns.org", serverPort);
-
-	//TODO: register all files with server
+	handleConnectServer(sf::IpAddress::LocalHost.toString(), serverPort);
 
 	listener.listen(listenerPort);
 	listenerPort = listener.getLocalPort();
@@ -22,6 +25,7 @@ void Client::init() {
 	waiter.add(indexServer.socket);
 }
 
+//begin both threads
 void Client::go() {
 	std::thread loopThread(&Client::incomingLoop, this);
 
@@ -42,6 +46,7 @@ void Client::inputLoop() {
 	}
 }
 
+//handle messages from peers
 void Client::handleMessage(Connection *peer) {
 	sf::Packet packet;
 	sf::Socket::Status status = peer->socket.receive(packet);
@@ -104,8 +109,10 @@ void Client::handleMessage(Connection *peer) {
 			file->takeIncoming(packet);
 			if (file->isComplete()) {
 				std::cout << "File: \"" << filename << "\" download complete. Writing to disk...\n";
+				std::cout << "Display file: \"" << filename << "\"\n";
 				file->writeToDisk();
 				removeIncompleteFile(filename);
+
 				std::cout << "File: \"" << filename << "\" written to disk\n";
 			}
 		}
@@ -115,7 +122,7 @@ void Client::handleMessage(Connection *peer) {
 	}
 }
 
-
+//handle message from server
 void Client::handleServerMessage() {
 	sf::Packet packet;
 	sf::Socket::Status status = indexServer.socket.receive(packet);
@@ -143,34 +150,48 @@ void Client::handleServerMessage() {
 		std::cout << "Server disconnected\n";
 
 	} else if (message_type == CLIENT_GIVE_FILE_LOCATION) {
+		if (!currentlyTestingServer) {
 
-		std::string filename;
-		std::string ip;
-		int port;
-		packet >> filename >> ip >> port;
+			std::string filename;
+			std::string ip;
+			int port;
+			packet >> filename >> ip >> port;
 
-		Connection *peerWithFile = findPeer(ip, port);
+			if (ip == "NULL"){
+				std::cout << "Server says file not found\n";
+				return;
+			}
 
-		if (!peerWithFile) {
-			peerWithFile = connectToPeer(ip, port);
-		}
+			Connection *peerWithFile = findPeer(ip, port);
 
-		if (peerWithFile) {
-			std::cout << "The file: \"" << filename << "\" is located at {" << peerWithFile->toString() << "}\n";
+			if (!peerWithFile) {
+				peerWithFile = connectToPeer(ip, port);
+			}
 
-			sf::Packet message;
-			message << PEER_REQUEST_FILE;
-			message << filename;
+			if (peerWithFile) {
+				std::cout << "The file: \"" << filename << "\" is located at {" << peerWithFile->toString() << "}\n";
 
-			peerWithFile->socket.send(message);
+				sf::Packet message;
+				message << PEER_REQUEST_FILE;
+				message << filename;
 
-			std::cout << "Requested file: " << filename << " from {" << peerWithFile->toString() << "}\n";
+				peerWithFile->socket.send(message);
+
+				std::cout << "Requested file: " << filename << " from {" << peerWithFile->toString() << "}\n";
+			}
+		}else{
+			pendingResponses -= 1;
+			if (pendingResponses <= 0) {
+				std::cout << "Test took " << timer.getElapsedTime().asMilliseconds() << " ms\n";
+				currentlyTestingServer = false;
+			}
 		}
 	} else {
 		std::cout << "Received unknown message type from server. header: " << message_type << "\n";
 	}
 }
 
+//parse cmd input and handle it
 void Client::handleInput(std::string input) {
 	std::vector<std::string> commandParts;
 
@@ -189,7 +210,7 @@ void Client::handleInput(std::string input) {
 	if (commandParts[0] == "exit") {
 		handleQuit();
 	} else if (commandParts[0] == "connect") {
-		handleConnectServer("http://p2pshare.duckdns.org", serverPort);
+		handleConnectServer(sf::IpAddress::LocalHost.toString(), serverPort);
 	} else if (commandParts[0] == "getfile") {
 		if (indexServer.isConnected) {
 			sf::Packet message;
@@ -214,6 +235,30 @@ void Client::handleInput(std::string input) {
 		} else {
 			std::cout << "Error: No server connected\n";
 		}
+	} else if (commandParts[0] == "testresponse") { //test server response time
+
+		if (indexServer.isConnected) {
+			currentlyTestingServer = true;
+			int n = std::stoi(commandParts[1]);
+			pendingResponses = n;
+
+			std::cout << "Testing Server Response time with " << n << " queries\n";
+			timer.restart();
+
+			lock.unlock();
+
+			for (int i = 0; i < n; ++i) {
+				sf::Packet message;
+				message << SERVER_REQUEST_FILE_LOCATION;
+				message << "testfile";
+
+				indexServer.socket.send(message);
+			}
+
+			lock.lock();
+		} else {
+			std::cout << "Error: No server connected\n";
+		}
 	} else {
 		std::cout << "Sorry, unknown command\n";
 	}
@@ -222,7 +267,8 @@ void Client::handleInput(std::string input) {
 }
 
 
-//this is the loop that waits for messages and handles them
+//this is the loop that waits for messages and passes them to handler functions
+//also takes care of new incoming connections
 void Client::incomingLoop() {
 	while (true) {
 		bool anythingReady = waiter.wait(sf::seconds(2)); //wait for message to come in or new connection
@@ -264,6 +310,7 @@ void Client::incomingLoop() {
 	}
 }
 
+//send disconnect messages to peers and server, then exit
 void Client::handleQuit() {
 	sf::Packet message;
 	message << SERVER_NOTIFY_CLIENT_DISCONNECT;
@@ -283,9 +330,12 @@ void Client::handleQuit() {
 		delete peers[i];
 	}
 
+	peers.clear();
+
 	timeToExit = true;
 }
 
+//try to connect to the server
 void Client::handleConnectServer(std::string ip, sf::Uint32 port) {
 	std::cout << "Connecting to server...\n";
 	if (indexServer.isConnected) {
@@ -302,6 +352,7 @@ void Client::handleConnectServer(std::string ip, sf::Uint32 port) {
 	std::cout << "Connected to server.\n";
 }
 
+//search downloading files
 File *Client::findIncompleteFile(std::string filename) {
 	for (int i = 0; i < incompleteFiles.size(); ++i) {
 		if (incompleteFiles[i].filename == filename) {
@@ -312,6 +363,7 @@ File *Client::findIncompleteFile(std::string filename) {
 	return nullptr;
 }
 
+//remove a pending file, usually because its complete
 void Client::removeIncompleteFile(std::string filename) {
 	for (int i = 0; i < incompleteFiles.size(); ++i) {
 		if (incompleteFiles[i].filename == filename) {
@@ -320,6 +372,7 @@ void Client::removeIncompleteFile(std::string filename) {
 	}
 }
 
+//try to connect to a peer
 Connection *Client::connectToPeer(std::string ip, sf::Uint32 port) {
 	Connection *newPeer = new Connection();
 	newPeer->ip = ip;
@@ -327,7 +380,7 @@ Connection *Client::connectToPeer(std::string ip, sf::Uint32 port) {
 
 	std::cout << "Attempting to connect to peer {" << newPeer->toString() << "}...\n";
 
-	if(ip == myIp){
+	if (ip == myIp) {
 		ip = sf::IpAddress::LocalHost.toString();
 	}
 	if (newPeer->socket.connect(ip, port) != sf::Socket::Done) {
@@ -340,6 +393,7 @@ Connection *Client::connectToPeer(std::string ip, sf::Uint32 port) {
 
 	return newPeer;
 }
+
 
 Connection *Client::findPeer(std::string ip, sf::Uint32 port) {
 	for (int i = 0; i < peers.size(); ++i) {

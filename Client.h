@@ -53,6 +53,11 @@ private:
 	Connection* connectToPeer(std::string ip, sf::Uint32 port);
 	Connection* findPeer(std::string ip, sf::Uint32 port);
 
+
+	bool currentlyTestingServer;
+	int pendingResponses;
+	sf::Clock timer;
+
 };
 
 
