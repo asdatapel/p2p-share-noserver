@@ -30,7 +30,6 @@ public:
 
 	void init(std::string filename, std::size_t size);
 	void initFromDisk(std::string filename);
-
 	void send(Connection* peer);
 	void takeIncoming(sf::Packet &packet);
 

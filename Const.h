@@ -19,8 +19,11 @@ const sf::Int32 CLIENT_NOTIFY_SERVER_SHUTDOWN = 8;
 const sf::Int32 CLIENT_GIVE_FILE_LOCATION = 9;
 
 const sf::Int32 PEER_NOTIFY_PEER_DISCONNECT = 10;
-const sf::Int32 PEER_REQUEST_FILE = 11;
+const sf::Int32 PEER_REQUEST_FILE = 11;                 //OBTAIN
 const sf::Int32 PEER_NOTIFY_STARTING_TRANSFER = 12;
-const sf::Int32 PEER_GIVE_FILE = 13;
+const sf::Int32 PEER_GIVE_FILE = 13;                    //DOWNLOAD
+
+const sf::Int32 PEER_QUERY_HIT = 14;
+const sf::Int32 PEER_QUERY_PEER = 15;
 
 #endif //P2P_SHARE_CONST_H

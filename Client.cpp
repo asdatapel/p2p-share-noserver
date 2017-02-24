@@ -23,6 +23,8 @@ void Client::init() {
 	listenerPort = listener.getLocalPort();
 	waiter.add(listener);
 	waiter.add(indexServer.socket);
+	readConfigFile();
+
 }
 
 //begin both threads
@@ -34,6 +36,16 @@ void Client::go() {
 	loopThread.join();
 
 }
+
+void Client::readConfigFile(){
+	std::ifstream input( "config.txt" );
+
+	//read in peer id, IP, and port information
+
+	std::cout << "Peer Network Established\n";
+
+}
+
 
 //this is the loop that takes in user commands
 void Client::inputLoop() {
@@ -96,6 +108,14 @@ void Client::handleMessage(Connection *peer) {
 		incompleteFiles.push_back(file);
 
 		std::cout << "Beginning download of file: \"" << filename << "\" from {" << peer->toString() << "}\n";
+	} else if (message_type == PEER_QUERY_HIT) {
+		//send message back to original sender about a file being present, provided that message IDs are the same
+
+	} else if (message_type == PEER_QUERY_PEER) {
+		//check local index if filename is present
+		//if present, send PEER_QUERY_HIT
+		//no matter what, forward the filename onto all neighbors
+
 	} else if (message_type == PEER_GIVE_FILE) {
 		std::string filename;
 		packet >> filename;

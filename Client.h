@@ -8,6 +8,8 @@
 #include <string>
 #include <sstream>
 #include <algorithm>
+#include <fstream>
+
 
 #include <SFML/Network.hpp>
 
@@ -42,6 +44,7 @@ private:
 
 	void incomingLoop();
 	void inputLoop();
+	void readConfigFile();
 
 	void handleServerMessage();
 	void handleMessage(Connection* peer);
