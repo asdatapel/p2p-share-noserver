@@ -1,6 +1,8 @@
 #include "Client.h"
 
-Client::Client() {
+Client::Client(int id) {
+	myID = id;
+
 	timeToExit = false;
 	myIp = sf::IpAddress::getPublicAddress(sf::seconds(10)).toString();
 	listenerPort = 0; //random port number
@@ -17,10 +19,13 @@ Client::~Client() {
 void Client::init() {
 	std::cout << "Starting Client..." << "\n";
 
+	readConfigFile();
+
 	listener.listen(listenerPort);
 	listenerPort = listener.getLocalPort();
 	waiter.add(listener);
-	readConfigFile();
+
+	connectToPeers();
 }
 
 //begin both threads
@@ -30,16 +35,52 @@ void Client::go() {
 	inputLoop();
 
 	loopThread.join();
-
 }
 
-void Client::readConfigFile(){
-	std::ifstream input( "config.txt" );
+void Client::readConfigFile() {
+	std::ifstream input("config");
 
-	//read in peer id, IP, and port information
+	std::map<int, Connection*> allPeers;
+
+	//read the list of peers with ids
+	std::string line;
+	while (std::getline(input, line)) {
+		std::istringstream ss(line);
+		int id, port;
+		std::string ip;
+		if (!(ss >> id >> ip >> port)) {
+			break;
+		}
+		if (id == -1) {
+			break;
+		}
+
+		allPeers[id] = new Connection(ip, port);
+
+		if (id == myID){
+			listenerPort = port;
+		}
+	}
+
+	//read all neighbors
+	while (std::getline(input, line)) {
+		std::istringstream ss(line);
+		int id;
+
+		if (!(ss >> id)) {
+			break;
+		}
+		if (id != this->myID) {
+			break;
+		}
+
+		int peerId;
+		while ((ss >> peerId)) {
+			peers[peerId] = allPeers[peerId];
+		}
+	}
 
 	std::cout << "Peer Network Established\n";
-
 }
 
 
@@ -71,12 +112,10 @@ void Client::handleMessage(Connection *peer) {
 		waiter.remove(peer->socket);
 		peer->socket.disconnect();
 
-		for (int i = 0; i < peers.size(); ++i) {
-			if (peers[i] == peer) {
-				peers.erase(peers.begin() + i);
-				--i;
+		for (auto& peer1 : peers) {
+			if (peer1.second == peer) {
+				peers.erase(peer1.first);
 			}
-
 		}
 	} else if (message_type == PEER_REQUEST_FILE) {
 		std::string filename;
@@ -234,14 +273,16 @@ void Client::incomingLoop() {
 				newPeer->ip = newPeer->socket.getRemoteAddress().toString();
 				newPeer->port = newPeer->socket.getRemotePort();
 
-				peers.push_back(newPeer);
 				waiter.add(newPeer->socket);
+
+				replacePeer(newPeer);
+				std::cout << "Connected to {" << newPeer->toString() << "}\n";
 			}
 
 			//check if something from a connected peer
-			for (int i = 0; i < peers.size(); ++i) {
-				if (waiter.isReady(peers[i]->socket)) {
-					handleMessage(peers[i]);
+			for (auto& peer : peers) {
+				if (waiter.isReady(peer.second->socket)) {
+					handleMessage(peer.second);
 				}
 			}
 
@@ -250,18 +291,18 @@ void Client::incomingLoop() {
 	}
 }
 
-//send disconnect messages to peers and server, then exit
+//send disconnect messages to peers, then exit
 void Client::handleQuit() {
 	waiter.remove(listener);
 	listener.close();
 
 	sf::Packet message;
 	message << PEER_NOTIFY_PEER_DISCONNECT;
-	for (int i = 0; i < peers.size(); ++i) {
-		peers[i]->socket.send(message);
-		waiter.remove(peers[i]->socket);
-		peers[i]->socket.disconnect();
-		delete peers[i];
+	for (auto& peer : peers) {
+		peer.second->socket.send(message);
+		waiter.remove(peer.second->socket);
+		peer.second->socket.disconnect();
+		delete peer.second;
 	}
 
 	peers.clear();
@@ -290,7 +331,7 @@ void Client::removeIncompleteFile(std::string filename) {
 }
 
 //try to connect to a peer
-Connection *Client::connectToPeer(std::string ip, sf::Uint32 port) {
+/*Connection *Client::connectToPeer(std::string ip, sf::Uint32 port) {
 	Connection *newPeer = new Connection();
 	newPeer->ip = ip;
 	newPeer->port = port;
@@ -309,13 +350,37 @@ Connection *Client::connectToPeer(std::string ip, sf::Uint32 port) {
 	waiter.add(newPeer->socket);
 
 	return newPeer;
+}*/
+
+void Client::connectToPeers() {
+	for (auto& peer : peers) {
+		std::cout << "Attempting to connect to peer {" << peer.second->toString() << "}...\n";
+
+		if (peer.second->ip == myIp) {
+			peer.second->ip = sf::IpAddress::LocalHost.toString();
+		}
+		if (peer.second->socket.connect(peer.second->ip, peer.second->port) != sf::Socket::Done) {
+			std::cout << "Failed to connect to {" << peer.second->toString() << "}\n";
+			continue;
+		}
+		waiter.add(peer.second->socket);
+		std::cout << "Connected to {" << peer.second->toString() << "}\n";
+	}
 }
 
+void Client::replacePeer(Connection *connection){
+	for (auto& peer:peers) {
+		if (peer.second->ip == connection->ip && peer.second->port == connection->port) {
+			delete peers[peer.first];
+			peers[peer.first] = connection;
+		}
+	}
+}
 
 Connection *Client::findPeer(std::string ip, sf::Uint32 port) {
-	for (int i = 0; i < peers.size(); ++i) {
-		if (peers[i]->ip == ip && peers[i]->port == port) {
-			return peers[i];
+	for (auto& peer:peers) {
+		if (peer.second->ip == ip && peer.second->port == port) {
+			return peer.second;
 		}
 	}
 

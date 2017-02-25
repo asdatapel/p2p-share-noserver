@@ -13,6 +13,11 @@ public:
 		isConnected = false;
 	}
 
+	Connection(std::string ip, int port){
+		this->ip = ip;
+		this->port = port;
+	}
+
 	sf::TcpSocket socket;
 	std::string ip;
 	sf::Uint32 port;

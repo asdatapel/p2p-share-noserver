@@ -18,23 +18,24 @@
 
 class Client {
 public:
-	Client();
+	Client(int id);
 	~Client();
 
 	void init();
 
 	void go();
 private:
-	std::vector<Connection*> peers;
+	std::map<int, Connection*> peers;
 	sf::TcpListener listener;
 	sf::SocketSelector waiter;
 
 	std::mutex lock;
 
 	std::vector<File> incompleteFiles;
-	File* findIncompleteFile(std::string filename);
+	File *findIncompleteFile(std::string filename);
 	void removeIncompleteFile(std::string filename);
 
+	int myID;
 	std::string myIp;
 	sf::Uint32 listenerPort;
 
@@ -44,19 +45,19 @@ private:
 	void inputLoop();
 	void readConfigFile();
 
-	void handleMessage(Connection* peer);
+	void handleMessage(Connection *peer);
 	void handleInput(std::string input);
 
 	void handleQuit();
 
-	Connection* connectToPeer(std::string ip, sf::Uint32 port);
-	Connection* findPeer(std::string ip, sf::Uint32 port);
+	void connectToPeers();
+	void replacePeer(Connection* connection);
+	Connection *findPeer(std::string ip, sf::Uint32 port);
 
 	bool currentlyTestingServer;
 	int pendingResponses;
 	sf::Clock timer;
 
 };
-
 
 #endif //P2P_SHARE_CLIENT_H

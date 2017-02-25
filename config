@@ -1,10 +1,8 @@
-.peerID
-peerID IP port
-peerID IP port
-peerID IP port
-peerID IP port
-
-.peerID
-peerID IP port
-peerID IP port
-peerID IP port
+0 127.0.0.1 65000
+1 127.0.0.1 65001
+2 127.0.0.1 65002
+3 127.0.0.1 65003
+-1 * -1 <---- end of declarations
+0 1 2
+1 0 2
+2 0 1
