@@ -10,7 +10,6 @@
 #include <algorithm>
 #include <fstream>
 
-
 #include <SFML/Network.hpp>
 
 #include "Const.h"
@@ -27,7 +26,6 @@ public:
 	void go();
 private:
 	std::vector<Connection*> peers;
-	Connection indexServer;
 	sf::TcpListener listener;
 	sf::SocketSelector waiter;
 
@@ -46,16 +44,13 @@ private:
 	void inputLoop();
 	void readConfigFile();
 
-	void handleServerMessage();
 	void handleMessage(Connection* peer);
 	void handleInput(std::string input);
 
 	void handleQuit();
-	void handleConnectServer(std::string ip, sf::Uint32 port);
 
 	Connection* connectToPeer(std::string ip, sf::Uint32 port);
 	Connection* findPeer(std::string ip, sf::Uint32 port);
-
 
 	bool currentlyTestingServer;
 	int pendingResponses;

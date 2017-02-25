@@ -17,14 +17,10 @@ Client::~Client() {
 void Client::init() {
 	std::cout << "Starting Client..." << "\n";
 
-	handleConnectServer(sf::IpAddress::LocalHost.toString(), serverPort);
-
 	listener.listen(listenerPort);
 	listenerPort = listener.getLocalPort();
 	waiter.add(listener);
-	waiter.add(indexServer.socket);
 	readConfigFile();
-
 }
 
 //begin both threads
@@ -142,75 +138,6 @@ void Client::handleMessage(Connection *peer) {
 	}
 }
 
-//handle message from server
-void Client::handleServerMessage() {
-	sf::Packet packet;
-	sf::Socket::Status status = indexServer.socket.receive(packet);
-	if (status != sf::Socket::Done) {
-		//TODO: do some error stuff
-		return;
-	}
-
-	sf::Int32 message_type;
-	packet >> message_type;
-	if (message_type == CLIENT_REQUEST_CONNECTION_INFO) {
-
-		sf::Packet response;
-		response << SERVER_GIVE_CONNECTION_INFO;
-		response << myIp << listenerPort;
-
-		indexServer.socket.send(response);
-		std::cout << "Sent client info to server\n";
-
-	} else if (message_type == CLIENT_NOTIFY_SERVER_SHUTDOWN) {
-
-		waiter.remove(indexServer.socket);
-		indexServer.socket.disconnect();
-		indexServer.isConnected = false;
-		std::cout << "Server disconnected\n";
-
-	} else if (message_type == CLIENT_GIVE_FILE_LOCATION) {
-		if (!currentlyTestingServer) {
-
-			std::string filename;
-			std::string ip;
-			int port;
-			packet >> filename >> ip >> port;
-
-			if (ip == "NULL"){
-				std::cout << "Server says file not found\n";
-				return;
-			}
-
-			Connection *peerWithFile = findPeer(ip, port);
-
-			if (!peerWithFile) {
-				peerWithFile = connectToPeer(ip, port);
-			}
-
-			if (peerWithFile) {
-				std::cout << "The file: \"" << filename << "\" is located at {" << peerWithFile->toString() << "}\n";
-
-				sf::Packet message;
-				message << PEER_REQUEST_FILE;
-				message << filename;
-
-				peerWithFile->socket.send(message);
-
-				std::cout << "Requested file: " << filename << " from {" << peerWithFile->toString() << "}\n";
-			}
-		}else{
-			pendingResponses -= 1;
-			if (pendingResponses <= 0) {
-				std::cout << "Test took " << timer.getElapsedTime().asMilliseconds() << " ms\n";
-				currentlyTestingServer = false;
-			}
-		}
-	} else {
-		std::cout << "Received unknown message type from server. header: " << message_type << "\n";
-	}
-}
-
 //parse cmd input and handle it
 void Client::handleInput(std::string input) {
 	std::vector<std::string> commandParts;
@@ -230,9 +157,8 @@ void Client::handleInput(std::string input) {
 	if (commandParts[0] == "exit") {
 		handleQuit();
 	} else if (commandParts[0] == "connect") {
-		handleConnectServer(sf::IpAddress::LocalHost.toString(), serverPort);
 	} else if (commandParts[0] == "getfile") {
-		if (indexServer.isConnected) {
+		/*if (indexServer.isConnected) {
 			sf::Packet message;
 			message << SERVER_REQUEST_FILE_LOCATION;
 			message << commandParts[1];
@@ -242,9 +168,9 @@ void Client::handleInput(std::string input) {
 			std::cout << "Requested file \"" << commandParts[1] << "\"\n";
 		} else {
 			std::cout << "Error: No server connected\n";
-		}
+		}*/
 	} else if (commandParts[0] == "addfile") {
-		if (indexServer.isConnected) {
+		/*if (indexServer.isConnected) {
 			sf::Packet message;
 			message << SERVER_REGISTER_FILE;
 			message << commandParts[1];
@@ -254,9 +180,9 @@ void Client::handleInput(std::string input) {
 			indexServer.socket.send(message);
 		} else {
 			std::cout << "Error: No server connected\n";
-		}
+		}*/
 	} else if (commandParts[0] == "testresponse") { //test server response time
-
+		/*
 		if (indexServer.isConnected) {
 			currentlyTestingServer = true;
 			int n = std::stoi(commandParts[1]);
@@ -278,7 +204,7 @@ void Client::handleInput(std::string input) {
 			lock.lock();
 		} else {
 			std::cout << "Error: No server connected\n";
-		}
+		}*/
 	} else {
 		std::cout << "Sorry, unknown command\n";
 	}
@@ -319,12 +245,6 @@ void Client::incomingLoop() {
 				}
 			}
 
-			//check if something from the server
-			if (waiter.isReady(indexServer.socket)) {
-				handleServerMessage();
-			}
-
-
 		}
 		lock.unlock();
 	}
@@ -332,16 +252,10 @@ void Client::incomingLoop() {
 
 //send disconnect messages to peers and server, then exit
 void Client::handleQuit() {
-	sf::Packet message;
-	message << SERVER_NOTIFY_CLIENT_DISCONNECT;
-	indexServer.socket.send(message);
-	waiter.remove(indexServer.socket);
-	indexServer.socket.disconnect();
-
 	waiter.remove(listener);
 	listener.close();
 
-	message.clear();
+	sf::Packet message;
 	message << PEER_NOTIFY_PEER_DISCONNECT;
 	for (int i = 0; i < peers.size(); ++i) {
 		peers[i]->socket.send(message);
@@ -353,23 +267,6 @@ void Client::handleQuit() {
 	peers.clear();
 
 	timeToExit = true;
-}
-
-//try to connect to the server
-void Client::handleConnectServer(std::string ip, sf::Uint32 port) {
-	std::cout << "Connecting to server...\n";
-	if (indexServer.isConnected) {
-		waiter.remove(indexServer.socket);
-		indexServer.socket.disconnect();
-		indexServer.isConnected = false;
-	}
-
-	//TODO: error checking
-	indexServer.socket.connect(sf::IpAddress(ip), port);
-	waiter.add(indexServer.socket);
-	indexServer.isConnected = true;
-
-	std::cout << "Connected to server.\n";
 }
 
 //search downloading files
