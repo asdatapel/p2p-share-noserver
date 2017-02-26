@@ -71,7 +71,7 @@ void Client::readConfigFile() {
 			break;
 		}
 		if (id != this->myID) {
-			break;
+			continue;
 		}
 
 		int peerId;
