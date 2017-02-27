@@ -46,7 +46,7 @@ void File::send(Connection *peer) {
 	sf::Packet packet;
 	for (int i = 0; i < pieces.size(); ++i) {
 		packet.clear();
-		packet << PEER_GIVE_FILE;
+		packet << GIVE_FILE_PORTION;
 		packet << filename << pieces[i].portionNumber << (sf::Uint32)pieces[i].actualSize;
 		packet << pieces[i];
 

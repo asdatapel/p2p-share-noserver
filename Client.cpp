@@ -1,13 +1,14 @@
 #include "Client.h"
 
-Client::Client(int id) {
+Client::Client(sf::Uint32 id) {
 	myID = id;
 
 	timeToExit = false;
 	myIp = sf::IpAddress::getPublicAddress(sf::seconds(10)).toString();
+	sequence = 0;
 	listenerPort = 0; //random port number
 
-	currentlyTestingServer = false;
+	logTimer.restart();
 }
 
 Client::~Client() {
@@ -20,12 +21,12 @@ void Client::init() {
 	std::cout << "Starting Client..." << "\n";
 
 	readConfigFile();
+	connectToPeers();
 
 	listener.listen(listenerPort);
 	listenerPort = listener.getLocalPort();
 	waiter.add(listener);
 
-	connectToPeers();
 }
 
 //begin both threads
@@ -40,13 +41,12 @@ void Client::go() {
 void Client::readConfigFile() {
 	std::ifstream input("config");
 
-	std::map<int, Connection*> allPeers;
 
 	//read the list of peers with ids
 	std::string line;
 	while (std::getline(input, line)) {
 		std::istringstream ss(line);
-		int id, port;
+		sf::Uint32 id, port;
 		std::string ip;
 		if (!(ss >> id >> ip >> port)) {
 			break;
@@ -55,9 +55,9 @@ void Client::readConfigFile() {
 			break;
 		}
 
-		allPeers[id] = new Connection(ip, port);
+		nodes[id] = Node{ip, port};
 
-		if (id == myID){
+		if (id == myID) {
 			listenerPort = port;
 		}
 	}
@@ -76,11 +76,11 @@ void Client::readConfigFile() {
 
 		int peerId;
 		while ((ss >> peerId)) {
-			peers[peerId] = allPeers[peerId];
+			peers[peerId] = new Connection(nodes[peerId].ip, nodes[peerId].port);
 		}
 	}
 
-	std::cout << "Peer Network Established\n";
+	std::cout << "Config read\n";
 }
 
 
@@ -96,7 +96,9 @@ void Client::inputLoop() {
 }
 
 //handle messages from peers
-void Client::handleMessage(Connection *peer) {
+void Client::handleMessageFromNetwork(sf::Uint32 peerId) {
+	Connection *peer = peers[peerId];
+
 	sf::Packet packet;
 	sf::Socket::Status status = peer->socket.receive(packet);
 	if (status != sf::Socket::Done) {
@@ -104,54 +106,127 @@ void Client::handleMessage(Connection *peer) {
 		return;
 	}
 
+	sf::Uint32 destId;
+	sf::Uint32 sourceId;
+	sf::Uint32 sequence;
+	sf::Uint32 ttl;
+	packet >> destId;
+	packet >> sourceId >> sequence;
+	packet >> ttl;
+
 	sf::Int32 message_type;
 	packet >> message_type;
-	if (message_type == PEER_NOTIFY_PEER_DISCONNECT) {
+	if (message_type == NOTIFY_PEER_DISCONNECT) {
 		std::cout << "Peer: {" << peer->toString() << "} disconnected\n";
 
 		waiter.remove(peer->socket);
 		peer->socket.disconnect();
 
-		for (auto& peer1 : peers) {
+		for (auto &peer1 : peers) {
 			if (peer1.second == peer) {
-				peers.erase(peer1.first);
+				peer1.second->socket.disconnect();
 			}
 		}
-	} else if (message_type == PEER_REQUEST_FILE) {
+	} else if (message_type == QUERY_FILE_LOCATION) {
 		std::string filename;
 		packet >> filename;
 
-		File file;
-		file.initFromDisk(filename);
+		std::cout << "Received request for file: " << filename << "\n";
 
-		sf::Packet response;
-		response << PEER_NOTIFY_STARTING_TRANSFER;
-		response << filename << (sf::Uint32) file.size;
-		peer->socket.send(response);
+		if (searchFile(filename)) {
+			sf::Packet response;
+			response << sourceId << sourceId << sequence << (sf::Uint32)0 << GIVE_FILE_LOCATION << filename << myID;
 
-		file.send(peer);
+			peer->socket.send(response);
 
-		std::cout << "Starting upload file: \"" << filename << "\" from {" << peer->toString() << "}\n";
-	} else if (message_type == PEER_NOTIFY_STARTING_TRANSFER) {
+			std::cout << "Query hit for file: " << filename << ". Sending file location upstream\n";
+		} else {
+			if (ttl > 0 && logQuery(peerId, sourceId, sequence, ttl)) {
+				sf::Packet forward;
+				forward << destId << sourceId << sequence << ttl - 1 << QUERY_FILE_LOCATION << filename;
+
+				broadcastQuery(forward, peerId);
+				std::cout << "Forwarding query for file: " << filename << "\n";
+			}
+
+		}
+
+	} else if (message_type == GIVE_FILE_LOCATION) {
 		std::string filename;
-		sf::Uint32 size;
-		packet >> filename >> size;
+		sf::Uint32 id;
 
-		File file;
-		file.init(filename, size);
+		packet >> filename >> id;
 
-		incompleteFiles.push_back(file);
+		if (destId == myID) {
+			if (pendingRequests.find(filename) != pendingRequests.end()) {
+				pendingRequests.erase(filename);
+				std::cout << "File found at node : " << id << "\n";
 
-		std::cout << "Beginning download of file: \"" << filename << "\" from {" << peer->toString() << "}\n";
-	} else if (message_type == PEER_QUERY_HIT) {
-		//send message back to original sender about a file being present, provided that message IDs are the same
+				Connection *newPeer = new Connection(nodes[id].ip, nodes[id].port);
+				if (newPeer->socket.connect(newPeer->ip, newPeer->port) != sf::Socket::Done) {
+					std::cout << "Failed to connect to {" << newPeer->toString() << "}\n";
+				}
+				connections.push_back(newPeer);
+				waiter.add(newPeer->socket);
 
-	} else if (message_type == PEER_QUERY_PEER) {
-		//check local index if filename is present
-		//if present, send PEER_QUERY_HIT
-		//no matter what, forward the filename onto all neighbors
+				sf::Packet message;
+				message << REQUEST_FILE << filename;
+				newPeer->socket.send(message);
+			}
+		} else {
+			sf::Packet forward;
+			forward << sourceId << sourceId << sequence << (sf::Uint32)0 << GIVE_FILE_LOCATION << filename << id;
 
-	} else if (message_type == PEER_GIVE_FILE) {
+			sendUpstream(forward, sourceId, sequence);
+		}
+	} else if (message_type == TEST_QUERY) {
+		if (destId == myID) {
+			sf::Packet response;
+			response << sourceId << sourceId << sequence << (sf::Uint32)0 << TEST_RESPONSE;
+
+			peer->socket.send(response);
+
+		} else {
+			sf::Packet forward;
+			forward << destId << sourceId << sequence << ttl - 1 << TEST_QUERY;
+			broadcastQuery(forward, peerId);
+		}
+	} else if (message_type == TEST_RESPONSE) {
+		if (destId == myID) {
+			--pendingResponses;
+			if (pendingResponses == 0){
+				std::cout << "Response time: " << timer.getElapsedTime().asMilliseconds() << " ms\n";
+			}
+		} else {
+			sf::Packet forward;
+			forward << sourceId << sourceId << sequence << (sf::Uint32)0 << TEST_RESPONSE;
+			broadcastQuery(forward, peerId);
+		}
+	} else {
+		std::cout << "Received unknown message type from network peer: {" << peer->toString() << "} header: " << message_type
+				  << "\n";
+	}
+}
+
+bool Client::handleMessage(Connection *peer) {
+	sf::Packet packet;
+	sf::Socket::Status status = peer->socket.receive(packet);
+	if (status != sf::Socket::Done) {
+		//TODO: do some error stuff
+		return false;
+	}
+
+	sf::Int32 message_type;
+	packet >> message_type;
+	if (message_type == CONNECT_AS_NEIGHBOR) {
+		sf::Uint32 id;
+		packet >> id;
+
+		replacePeer(peer, id);
+
+		std::cout << "Moved connection to network peer\n";
+		return true;
+	} else if (message_type == GIVE_FILE_PORTION) {
 		std::string filename;
 		packet >> filename;
 
@@ -171,11 +246,40 @@ void Client::handleMessage(Connection *peer) {
 				std::cout << "File: \"" << filename << "\" written to disk\n";
 			}
 		}
+	} else if (message_type == REQUEST_FILE) {
+		std::string filename;
+		packet >> filename;
+
+		File file;
+		file.initFromDisk(filename);
+
+		sf::Packet response;
+		response << NOTIFY_STARTING_TRANSFER;
+		response << filename << (sf::Uint32) file.size;
+		peer->socket.send(response);
+
+		file.send(peer);
+
+		std::cout << "Starting upload file: \"" << filename << "\" from {" << peer->toString() << "}\n";
+	} else if (message_type == NOTIFY_STARTING_TRANSFER) {
+		std::string filename;
+		sf::Uint32 size;
+		packet >> filename >> size;
+
+		File file;
+		file.init(filename, size);
+
+		incompleteFiles.push_back(file);
+
+		std::cout << "Beginning download of file: \"" << filename << "\" from {" << peer->toString() << "}\n";
 	} else {
 		std::cout << "Received unknown message type from peer: {" << peer->toString() << "} header: " << message_type
 				  << "\n";
 	}
+
+	return false;
 }
+
 
 //parse cmd input and handle it
 void Client::handleInput(std::string input) {
@@ -195,55 +299,36 @@ void Client::handleInput(std::string input) {
 
 	if (commandParts[0] == "exit") {
 		handleQuit();
-	} else if (commandParts[0] == "connect") {
 	} else if (commandParts[0] == "getfile") {
-		/*if (indexServer.isConnected) {
-			sf::Packet message;
-			message << SERVER_REQUEST_FILE_LOCATION;
-			message << commandParts[1];
+		sf::Packet message;
+		message << (sf::Uint32) 0 << myID << sequence << (sf::Uint32) 10 << QUERY_FILE_LOCATION << commandParts[1];
+		++sequence;
+		pendingRequests.insert(commandParts[1]);
 
-			indexServer.socket.send(message);
+		broadcastQuery(message, myID);
 
-			std::cout << "Requested file \"" << commandParts[1] << "\"\n";
-		} else {
-			std::cout << "Error: No server connected\n";
-		}*/
 	} else if (commandParts[0] == "addfile") {
-		/*if (indexServer.isConnected) {
+		index.push_back(commandParts[1]);
+		std::cout << "File added to index: " << commandParts[1] << "\n";
+	} else if (commandParts[0] == "testresponse") { //test response time
+		int n = std::stoi(commandParts[2]);
+		pendingResponses = n;
+
+		std::cout << "Testing Server Response time with " << n << " queries\n";
+		timer.restart();
+
+		lock.unlock();
+
+		for (int i = 0; i < n; ++i) {
 			sf::Packet message;
-			message << SERVER_REGISTER_FILE;
-			message << commandParts[1];
+			message << (sf::Uint32)std::stoi(commandParts[1]) << myID << sequence << (sf::Uint32) 10 << TEST_QUERY;
+			++sequence;
 
-			std::cout << "Registered file \"" << commandParts[1] << "\"\n";
+			broadcastQuery(message, myID);
+		}
 
-			indexServer.socket.send(message);
-		} else {
-			std::cout << "Error: No server connected\n";
-		}*/
-	} else if (commandParts[0] == "testresponse") { //test server response time
-		/*
-		if (indexServer.isConnected) {
-			currentlyTestingServer = true;
-			int n = std::stoi(commandParts[1]);
-			pendingResponses = n;
+		lock.lock();
 
-			std::cout << "Testing Server Response time with " << n << " queries\n";
-			timer.restart();
-
-			lock.unlock();
-
-			for (int i = 0; i < n; ++i) {
-				sf::Packet message;
-				message << SERVER_REQUEST_FILE_LOCATION;
-				message << "testfile";
-
-				indexServer.socket.send(message);
-			}
-
-			lock.lock();
-		} else {
-			std::cout << "Error: No server connected\n";
-		}*/
 	} else {
 		std::cout << "Sorry, unknown command\n";
 	}
@@ -259,6 +344,9 @@ void Client::incomingLoop() {
 		bool anythingReady = waiter.wait(sf::seconds(2)); //wait for message to come in or new connection
 
 		lock.lock();
+
+		flushLog();
+
 		if (!anythingReady) { // check if something actually came in
 			if (timeToExit) {
 				lock.unlock();
@@ -275,14 +363,25 @@ void Client::incomingLoop() {
 
 				waiter.add(newPeer->socket);
 
-				replacePeer(newPeer);
+				connections.push_back(newPeer);
+
 				std::cout << "Connected to {" << newPeer->toString() << "}\n";
 			}
 
-			//check if something from a connected peer
-			for (auto& peer : peers) {
+			//check if something from a network peer
+			for (auto &peer : peers) {
 				if (waiter.isReady(peer.second->socket)) {
-					handleMessage(peer.second);
+					handleMessageFromNetwork(peer.first);
+				}
+			}
+
+			//check if something from a non-network peer
+			for (int i = 0; i < connections.size(); ++i) {
+				if (waiter.isReady(connections[i]->socket)) {
+					if (handleMessage(connections[i])) {
+						connections.erase(connections.begin() + i);
+						--i;
+					}
 				}
 			}
 
@@ -297,8 +396,8 @@ void Client::handleQuit() {
 	listener.close();
 
 	sf::Packet message;
-	message << PEER_NOTIFY_PEER_DISCONNECT;
-	for (auto& peer : peers) {
+	message << (sf::Uint32) 0 << myID << sequence << (sf::Uint32) 5 << NOTIFY_PEER_DISCONNECT;
+	for (auto &peer : peers) {
 		peer.second->socket.send(message);
 		waiter.remove(peer.second->socket);
 		peer.second->socket.disconnect();
@@ -330,30 +429,8 @@ void Client::removeIncompleteFile(std::string filename) {
 	}
 }
 
-//try to connect to a peer
-/*Connection *Client::connectToPeer(std::string ip, sf::Uint32 port) {
-	Connection *newPeer = new Connection();
-	newPeer->ip = ip;
-	newPeer->port = port;
-
-	std::cout << "Attempting to connect to peer {" << newPeer->toString() << "}...\n";
-
-	if (ip == myIp) {
-		ip = sf::IpAddress::LocalHost.toString();
-	}
-	if (newPeer->socket.connect(ip, port) != sf::Socket::Done) {
-		std::cout << "Failed to connect to {" << newPeer->toString() << "}\n";
-		return nullptr;
-	}
-
-	peers.push_back(newPeer);
-	waiter.add(newPeer->socket);
-
-	return newPeer;
-}*/
-
 void Client::connectToPeers() {
-	for (auto& peer : peers) {
+	for (auto &peer : peers) {
 		std::cout << "Attempting to connect to peer {" << peer.second->toString() << "}...\n";
 
 		if (peer.second->ip == myIp) {
@@ -363,26 +440,74 @@ void Client::connectToPeers() {
 			std::cout << "Failed to connect to {" << peer.second->toString() << "}\n";
 			continue;
 		}
+
+		sf::Packet message;
+		message << CONNECT_AS_NEIGHBOR << myID;
+		peer.second->socket.send(message);
+
 		waiter.add(peer.second->socket);
 		std::cout << "Connected to {" << peer.second->toString() << "}\n";
 	}
 }
 
-void Client::replacePeer(Connection *connection){
-	for (auto& peer:peers) {
-		if (peer.second->ip == connection->ip && peer.second->port == connection->port) {
-			delete peers[peer.first];
-			peers[peer.first] = connection;
-		}
-	}
+void Client::replacePeer(Connection *connection, sf::Uint32 id) {
+	delete peers[id];
+	peers[id] = connection;
 }
 
 Connection *Client::findPeer(std::string ip, sf::Uint32 port) {
-	for (auto& peer:peers) {
+	for (auto &peer:peers) {
 		if (peer.second->ip == ip && peer.second->port == port) {
 			return peer.second;
 		}
 	}
-
 	return nullptr;
 }
+
+bool Client::searchFile(std::string filename) {
+	for (int i = 0; i < index.size(); ++i) {
+		if (filename == index[i]) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool Client::logQuery(sf::Uint32 peerId, sf::Uint32 sourceId, sf::Uint32 sequence, sf::Uint32 ttl) {
+	for (auto &logitem : log) {
+		if (sequence == logitem.sequence && sourceId == logitem.sourceId) {
+			return false;
+		}
+	}
+
+	LogItem l{peerId, sourceId, sequence, logTimer.getElapsedTime()};
+	log.push_back(l);
+
+	return true;
+}
+
+void Client::broadcastQuery(sf::Packet message, sf::Uint32 peerId) {
+	for (auto &peer : peers) {
+		if (peer.first != peerId) { // make sure not to resend backwards
+			peer.second->socket.send(message);
+		}
+	}
+}
+
+void Client::sendUpstream(sf::Packet message, sf::Uint32 sourceId, sf::Uint32 sequence) {
+	for (auto &logitem : log) {
+		if (sequence == logitem.sequence && sourceId == logitem.sourceId) {
+			peers[logitem.upstream]->socket.send(message);
+		}
+	}
+}
+
+void Client::flushLog() {
+	std::list<LogItem>::iterator i = log.begin();
+	while (i != log.end()) {
+		if (logTimer.getElapsedTime().asSeconds() > i->time.asSeconds() + 20.0) {
+			log.erase(i++);
+		}
+	}
+}
+

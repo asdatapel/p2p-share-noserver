@@ -3,6 +3,7 @@
 
 #include <iostream>
 #include <vector>
+#include <set>
 #include <thread>
 #include <mutex>
 #include <string>
@@ -16,27 +17,53 @@
 #include "Connection.h"
 #include "File.h"
 
+struct LogItem {
+	sf::Uint32 upstream;
+	sf::Uint32 sourceId;
+	sf::Uint32 sequence;
+	sf::Time time;
+};
+
+
+struct Node {
+	std::string ip;
+	sf::Uint32 port;
+};
+
 class Client {
 public:
-	Client(int id);
+	Client(sf::Uint32 id);
 	~Client();
 
 	void init();
 
 	void go();
 private:
-	std::map<int, Connection*> peers;
+	std::map<sf::Uint32, Connection *> peers; //static netowrk connections
+	std::vector<Connection*> connections; //for direct downloads
+	std::map<sf::Uint32, Node> nodes;
 	sf::TcpListener listener;
 	sf::SocketSelector waiter;
 
 	std::mutex lock;
 
+	std::vector<std::string> index;
+	std::set<std::string> pendingRequests;
+	bool searchFile(std::string filename);
+
 	std::vector<File> incompleteFiles;
 	File *findIncompleteFile(std::string filename);
 	void removeIncompleteFile(std::string filename);
 
-	int myID;
+	std::list<LogItem> log;
+	bool logQuery(sf::Uint32 peerId, sf::Uint32 sourceId, sf::Uint32 sequence, sf::Uint32 ttl);
+
+	void broadcastQuery(sf::Packet message, sf::Uint32 peerId);
+	void sendUpstream(sf::Packet message, sf::Uint32 sourceId, sf::Uint32 sequence);
+
+	sf::Uint32 myID;
 	std::string myIp;
+	sf::Uint32 sequence;
 	sf::Uint32 listenerPort;
 
 	bool timeToExit;
@@ -45,18 +72,21 @@ private:
 	void inputLoop();
 	void readConfigFile();
 
-	void handleMessage(Connection *peer);
+	void handleMessageFromNetwork(sf::Uint32 peerId);
+	bool handleMessage(Connection* connection);
 	void handleInput(std::string input);
 
 	void handleQuit();
 
 	void connectToPeers();
-	void replacePeer(Connection* connection);
+	void replacePeer(Connection *connection, sf::Uint32 id);
 	Connection *findPeer(std::string ip, sf::Uint32 port);
 
-	bool currentlyTestingServer;
 	int pendingResponses;
 	sf::Clock timer;
+
+	sf::Clock logTimer;
+	void flushLog();
 
 };
 
